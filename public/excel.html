@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Excel</title>
+  <link rel="stylesheet" href="/vendor/excel-renderer.css">
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #fff; font-family: system-ui, sans-serif; }
+    #app { position: absolute; inset: 0; height: auto !important; }
+    #message { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 1.5rem; color: #656d76; text-align: center; }
+    #message.error { color: #cf222e; }
+  </style>
+  <script>globalThis.process = globalThis.process || { env: {} };</script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="message">正在渲染工作簿…</div>
+  <script src="/vendor/excel-renderer.js"></script>
+  <script>
+    const message = document.getElementById("message");
+    let lastActive = -2;
+    function report(type) {
+      const info = window.OfficeExcel.sheets();
+      parent.postMessage({ type, active: info.active, count: info.ids.length, names: info.names }, "*");
+    }
+    (async () => {
+      try {
+        const response = await fetch("/api/workbook", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "读取失败");
+        window.OfficeExcel.mount("app", data);
+        message.remove();
+        report("excel-ready");
+        setInterval(() => {
+          const { active } = window.OfficeExcel.sheets();
+          if (active !== lastActive) { lastActive = active; report("excel-sheet"); }
+        }, 300);
+      } catch (error) {
+        message.className = "error";
+        message.textContent = error.message;
+      }
+    })();
+    window.addEventListener("message", (event) => {
+      if (event.source !== parent) return;
+      if (event.data?.type === "activate-sheet") window.OfficeExcel.activate(event.data.index);
+    });
+  </script>
+</body>
+</html>

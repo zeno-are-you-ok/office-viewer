@@ -1,0 +1,19 @@
+{
+  "name": "office-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "统一的 Office 文件查看器 canvas（Word / PDF / PowerPoint / Excel）",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@rollup/plugin-commonjs": "^29.0.0",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/wasm-node": "^4.52.5",
+    "@univerjs/preset-sheets-core": "^0.25.1",
+    "@univerjs/presets": "^0.25.1",
+    "exceljs": "^4.4.0",
+    "pdfjs-dist": "^4.10.38"
+  }
+}

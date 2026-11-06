@@ -1,0 +1,984 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Office viewer</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { display: flex; flex-direction: column; background: var(--background-color-default, #fff); color: var(--text-color-default, #1f2328); font-family: var(--font-sans, system-ui, sans-serif); font-size: var(--text-body-medium, 14px); line-height: var(--leading-body-medium, 20px); }
+    [hidden] { display: none !important; }
+
+    header { display: flex; flex-direction: column; gap: .5rem; padding: .7rem 1rem; border-bottom: 1px solid var(--border-color-default, #d0d7de); }
+    .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; min-width: 0; }
+    .row.head { flex-wrap: nowrap; }
+    .home { flex: 0 0 auto; padding: .25rem .5rem; margin-left: -.5rem; border-color: transparent; background: transparent; font-weight: var(--font-weight-semibold, 600); white-space: nowrap; }
+    .badge { flex: 0 0 auto; padding: 0 .5rem; border: 1px solid var(--border-color-default, #d0d7de); border-radius: 999px; color: var(--text-color-muted, #656d76); font-size: .8em; font-weight: normal; }
+    .path-control { display: flex; flex: 1 1 0; min-width: 0; height: 2rem; border: 1px solid var(--border-color-default, #d0d7de); border-radius: 6px; background: var(--background-color-default, #fff); }
+    .path-control:focus-within { border-color: var(--color-focus-outline, #0969da); box-shadow: 0 0 0 1px var(--color-focus-outline, #0969da); }
+    #filePath { flex: 1; min-width: 0; height: 100%; padding: 0 .5rem; border: 0; border-radius: 5px 0 0 5px; outline: 0; background: transparent; color: inherit; font: inherit; }
+    button { padding: .35rem .65rem; border: 1px solid var(--border-color-default, #d0d7de); border-radius: 6px; background: var(--background-color-default, #fff); color: inherit; font: inherit; cursor: pointer; }
+    button:hover:not(:disabled) { background: var(--background-color-secondary, #f6f8fa); }
+    button:disabled { cursor: default; opacity: .5; }
+    button.active { background: var(--background-color-secondary, #f6f8fa); border-color: var(--color-focus-outline, #0969da); box-shadow: 0 0 0 1px var(--color-focus-outline, #0969da); }
+    button:focus-visible, #pdfView:focus-visible { outline: 2px solid var(--color-focus-outline, #0969da); outline-offset: 1px; }
+    .history-control { position: relative; display: flex; flex: 0 0 auto; }
+    #historyToggle { width: 2.3rem; height: 100%; padding: 0 .15rem; border: 0; border-left: 1px solid var(--border-color-default, #d0d7de); border-radius: 0 5px 5px 0; background: transparent; }
+    #historyToggle:focus-visible { outline-offset: -2px; }
+    .icon-btn { display: inline-flex; flex: 0 0 auto; width: 2rem; height: 2rem; padding: 0; align-items: center; justify-content: center; }
+    .icon-btn svg { display: block; width: 1rem; height: 1rem; fill: currentColor; pointer-events: none; }
+    #historyMenu { position: absolute; top: calc(100% + .3rem); right: 0; z-index: 30; width: min(560px, calc(100vw - 2rem)); max-height: 260px; overflow: auto; padding: .25rem; border: 1px solid var(--border-color-default, #d0d7de); border-radius: 6px; background: var(--background-color-default, #fff); box-shadow: 0 6px 18px #0003; }
+    .history-item { display: block; width: 100%; overflow: hidden; padding: .45rem .55rem; border: 0; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+    .history-empty { padding: .5rem; color: var(--text-color-muted, #656d76); }
+    #filePicker { display: none; }
+    .sep { width: 1px; height: 1.2rem; background: var(--border-color-default, #d0d7de); }
+    .spacer { flex: 1; }
+    #counter, #zoomLabel { min-width: 4.5rem; text-align: center; color: var(--text-color-muted, #656d76); font-variant-numeric: tabular-nums; }
+
+    #statusbar { display: flex; gap: .5rem; align-items: center; min-width: 0; padding: .45rem 1rem; border-bottom: 1px solid var(--border-color-default, #d0d7de); color: var(--text-color-muted, #656d76); }
+    #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #status.warn { color: var(--text-color-attention, #9a6700); }
+
+    main { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; }
+    #thumbs { flex: 0 0 180px; min-height: 0; overflow-y: auto; padding: .75rem; border-right: 1px solid var(--border-color-default, #d0d7de); scrollbar-width: thin; }
+    .thumb { display: block; width: 100%; min-height: 58px; margin-bottom: .55rem; padding: .25rem; overflow: hidden; font-size: .8rem; text-align: left; }
+    .thumb img { display: block; width: 100%; margin-bottom: .25rem; }
+    .thumb-box { display: block; width: 100%; margin-bottom: .25rem; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px var(--border-color-default, #d0d7de); }
+    .thumb-box canvas { display: block; width: 100%; height: 100%; }
+    .thumb .num { display: block; text-align: center; }
+    .thumb.selected { outline: 2px solid var(--color-focus-outline, #0969da); }
+    #reader { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--background-color-secondary, #f6f8fa); }
+    #excelFrame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+    #pdfView { position: absolute; inset: 0; overflow: auto; scrollbar-gutter: stable; outline: 0; }
+    #pdfPages { display: flex; flex-direction: column; align-items: center; gap: 12px; width: max-content; min-width: 100%; padding: 16px; }
+    .pdf-page { position: relative; flex: none; overflow: hidden; background: #fff; box-shadow: 0 1px 4px #0003; }
+    .pdf-page canvas { display: block; }
+    .textLayer { position: absolute; inset: 0; overflow: clip; line-height: 1; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; z-index: 0; }
+    .textLayer :is(span, br) { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0 0; }
+    .textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) { z-index: 1; }
+    .textLayer span.markedContent { top: 0; height: 0; }
+    .textLayer ::selection { background: color-mix(in srgb, AccentColor, transparent 75%); }
+    .textLayer br::selection { background: transparent; }
+    .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+    .textLayer.selecting .endOfContent { top: 0; }
+    #content { max-width: 900px; min-height: 100%; margin: 1.5rem auto; padding: 3rem; overflow-wrap: anywhere; background: #fff; color: #1f2328; box-shadow: 0 2px 12px #0002; line-height: 1.6; }
+    #content h2 { margin: 1.5rem 0 .65rem; font-size: 1.25rem; }
+    #content p { margin: .5rem 0; white-space: pre-wrap; }
+    #content img { display: block; max-width: 100%; max-height: 600px; margin: .75rem auto; object-fit: contain; }
+    #stage { display: flex; width: 100%; height: 100%; padding: 2rem; overflow: hidden; }
+    #stage.zoomed { overflow: auto; }
+    #slide { flex: none; margin: auto; width: min(100%, 960px); min-height: 540px; padding: 3rem; background: #fff; color: #1f2328; box-shadow: 0 2px 12px #0002; }
+    #slide.rendered { width: auto; min-height: 0; padding: 0; }
+    #slide h2 { margin: 0 0 1.5rem; font-size: 1.35rem; white-space: pre-wrap; }
+    #slide p { margin: .6rem 0; line-height: 1.5; white-space: pre-wrap; }
+    #slide img { display: block; max-width: 100%; max-height: 420px; margin: 1rem auto; object-fit: contain; }
+    #slide.rendered img { width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; object-fit: contain; }
+
+    #welcome { display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 2rem; text-align: center; }
+    #welcome h2 { margin: 0; font-size: var(--text-title-large, 22px); }
+    #welcome p { margin: 0; color: var(--text-color-muted, #656d76); }
+    .kinds { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; }
+    #recent { display: flex; width: min(560px, 100%); flex-direction: column; gap: .25rem; }
+    #recent .history-item { border: 1px solid var(--border-color-default, #d0d7de); border-radius: 6px; }
+    .error { padding: 1.5rem; color: var(--text-color-danger, #cf222e); text-align: center; }
+    #drop { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; border: 2px dashed var(--color-focus-outline, #0969da); background: color-mix(in srgb, var(--background-color-default, #fff) 85%, transparent); font-size: 1.1rem; pointer-events: none; }
+    @media (max-width: 700px) { #content { margin: .5rem; padding: 1.25rem; } #thumbs { flex-basis: 110px; } #stage { padding: .75rem; } #slide { padding: 1.25rem; min-height: 360px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row head">
+      <button id="home" class="home" type="button" title="返回首页" aria-label="Office viewer，返回首页">Office viewer</button>
+      <div class="path-control">
+        <input id="filePath" type="text" placeholder="输入文件路径后按回车打开（Word / PDF / PPT / Excel）" spellcheck="false" aria-label="文件路径">
+        <div class="history-control">
+          <button id="historyToggle" type="button" title="历史记录" aria-label="历史记录" aria-expanded="false">▾</button>
+          <div id="historyMenu" hidden></div>
+        </div>
+      </div>
+      <input id="filePicker" type="file">
+      <button id="pickFile" class="icon-btn" type="button" title="选择文件" aria-label="选择文件">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z"/></svg>
+      </button>
+    </div>
+    <div class="row" id="tools" hidden>
+      <button id="toggleThumbs" class="icon-btn" type="button" title="收起侧栏" aria-label="收起侧栏" aria-pressed="true">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.25 2.5v11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <span class="sep" id="thumbSep"></span>
+      <button id="prev" class="icon-btn" type="button" title="上一页（←）" aria-label="上一页">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z"/></svg>
+      </button>
+      <span id="counter">- / -</span>
+      <button id="next" class="icon-btn" type="button" title="下一页（→）" aria-label="下一页">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z"/></svg>
+      </button>
+      <span class="sep" id="zoomSep"></span>
+      <button id="zoomOut" class="icon-btn" type="button" title="缩小（-）" aria-label="缩小">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 7.75A.75.75 0 0 1 2.75 7h10a.75.75 0 0 1 0 1.5h-10A.75.75 0 0 1 2 7.75Z"/></svg>
+      </button>
+      <span id="zoomLabel">适合页面</span>
+      <button id="zoomIn" class="icon-btn" type="button" title="放大（+）" aria-label="放大">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"/></svg>
+      </button>
+      <button id="zoomFit" class="icon-btn" type="button" title="适合页面（0）" aria-label="适合页面" aria-pressed="false">
+        <svg id="fitPageIcon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5v-2A1.5 1.5 0 0 1 3.5 2h2M10.5 2h2A1.5 1.5 0 0 1 14 3.5v2M14 10.5v2a1.5 1.5 0 0 1-1.5 1.5h-2M5.5 14h-2A1.5 1.5 0 0 1 2 12.5v-2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg id="fitWidthIcon" viewBox="0 0 16 16" aria-hidden="true" hidden><path d="M2 3v10M14 3v10M4.75 8h6.5M6.75 5.75 4.5 8l2.25 2.25M9.25 5.75 11.5 8l-2.25 2.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <span class="spacer"></span>
+      <button id="refresh" class="icon-btn" type="button" title="刷新" aria-label="刷新">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z"/></svg>
+      </button>
+    </div>
+  </header>
+  <div id="statusbar">
+    <span class="badge" id="kindBadge" hidden></span>
+    <span id="status">请输入文件路径、选择文件，或将文件拖放到此处</span>
+  </div>
+  <main>
+    <aside id="thumbs" aria-label="幻灯片列表" hidden></aside>
+    <section id="reader">
+      <div id="welcome">
+        <h2>Office viewer</h2>
+        <p>在同一个界面查看 Word、PDF、PowerPoint 和 Excel 文件</p>
+        <div class="kinds"><span class="badge">Word · .docx .docm</span><span class="badge">PDF · .pdf</span><span class="badge">PowerPoint · .pptx .pptm</span><span class="badge">Excel · .xlsx .xlsm .xltx</span></div>
+        <div id="recent" hidden></div>
+      </div>
+      <div id="pdfView" tabindex="0" aria-label="文档页面" hidden><div id="pdfPages"></div></div>
+      <iframe id="excelFrame" title="工作簿" src="about:blank" hidden></iframe>
+      <article id="content" hidden></article>
+      <div id="stage" hidden><article id="slide"></article></div>
+    </section>
+    <div id="drop" hidden>松开鼠标以打开文件</div>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { doc: null, page: 1, zoom: 0, sheet: { active: 0, count: 0 }, revision: -1, busy: 0, dirty: false };
+    const views = ["welcome", "pdfView", "excelFrame", "content", "stage"];
+    const SIDEBAR_KEY = "office-viewer.sidebar.";
+    const ui = { sidebar: {}, thumbsKind: null, thumbSel: 0 };
+    // 侧栏按文件类型记忆：PPT 默认展开，PDF / Word 默认收起
+    function wantsSidebar(kind) {
+      if (!(kind in ui.sidebar)) {
+        let stored = null;
+        try { stored = localStorage.getItem(SIDEBAR_KEY + kind); } catch { /* 读取失败时使用默认值 */ }
+        ui.sidebar[kind] = stored === null ? kind === "ppt" : stored === "1";
+      }
+      return ui.sidebar[kind];
+    }
+    function setSidebar(kind, open) {
+      ui.sidebar[kind] = open;
+      try { localStorage.setItem(SIDEBAR_KEY + kind, open ? "1" : "0"); } catch { /* 无法持久化时仅本次生效 */ }
+    }
+    const IDLE_STATUS = "请输入文件路径、选择文件，或将文件拖放到此处";
+    const ZOOM_STEPS = [25, 33, 50, 67, 75, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400];
+
+    function setStatus(text, warn = false) {
+      $("status").textContent = text;
+      $("status").classList.toggle("warn", warn);
+      $("status").title = text;
+    }
+    function show(view) {
+      for (const id of views) $(id).hidden = id !== view;
+      if (view !== "pdfView") releasePdf();
+      if (view !== "excelFrame") $("excelFrame").src = "about:blank";
+    }
+    function showError(message) {
+      show("content");
+      $("content").replaceChildren();
+      const error = document.createElement("p");
+      error.className = "error";
+      error.textContent = message;
+      $("content").appendChild(error);
+      $("thumbs").hidden = true;
+      $("tools").hidden = true;
+      clearThumbs();
+    }
+    function currentPercent() {
+      return state.doc?.mode === "pdf" ? pdf.percent : state.zoom || 100;
+    }
+    function zoomText() {
+      if (state.doc?.mode === "pdf") return Math.round(pdf.percent) + "%";
+      return state.zoom ? state.zoom + "%" : "适合页面";
+    }
+
+    function setNav(prev, next) {
+      $("prev").title = prev + "（←）";
+      $("prev").setAttribute("aria-label", prev);
+      $("next").title = next + "（→）";
+      $("next").setAttribute("aria-label", next);
+    }
+
+    // 侧栏缩略图：PPT 用幻灯片图片，PDF / Word 按需用 pdf.js 渲染
+    const thumbs = { gen: 0, items: [], observer: null, queue: [], live: [], busy: false };
+    const MAX_LIVE_THUMBS = 60;
+    function thumbsAvailable(doc) {
+      return Boolean(doc && !doc.empty && (doc.mode === "pdf" || doc.mode === "slides" || doc.mode === "parsed-slides"));
+    }
+    function clearThumbs() {
+      thumbs.gen++;
+      thumbs.observer?.disconnect();
+      thumbs.observer = null;
+      thumbs.items = [];
+      thumbs.queue = [];
+      thumbs.live = [];
+      thumbs.busy = false;
+      ui.thumbsKind = null;
+      ui.thumbSel = 0;
+      $("thumbs").replaceChildren();
+    }
+    function markThumb() {
+      const box = $("thumbs");
+      if (!box.children.length || ui.thumbSel === state.page) return;
+      ui.thumbSel = state.page;
+      box.querySelector(".thumb.selected")?.classList.remove("selected");
+      const current = box.children[state.page - 1];
+      if (!current) return;
+      current.classList.add("selected");
+      const area = box.getBoundingClientRect();
+      const rect = current.getBoundingClientRect();
+      if (rect.top < area.top) box.scrollTop -= area.top - rect.top + 6;
+      else if (rect.bottom > area.bottom) box.scrollTop += rect.bottom - area.bottom + 6;
+    }
+    function buildPdfThumbs() {
+      clearThumbs();
+      ui.thumbsKind = "pdf";
+      thumbs.items = pdf.sizes.map((size, index) => {
+        const button = document.createElement("button");
+        button.className = "thumb";
+        button.type = "button";
+        button.title = "第 " + (index + 1) + " 页";
+        const box = document.createElement("span");
+        box.className = "thumb-box";
+        box.style.aspectRatio = size.w + " / " + size.h;
+        const label = document.createElement("span");
+        label.className = "num";
+        label.textContent = String(index + 1);
+        button.append(box, label);
+        button.onclick = () => { gotoPage(index + 1); $("pdfView").focus({ preventScroll: true }); };
+        const item = { index, button, box, canvas: null, visible: false, queued: false };
+        button._thumb = item;
+        return item;
+      });
+      $("thumbs").replaceChildren(...thumbs.items.map((item) => item.button));
+      thumbs.observer = new IntersectionObserver(onThumbVisibility, { root: $("thumbs"), rootMargin: "400px 0px" });
+      for (const item of thumbs.items) thumbs.observer.observe(item.button);
+    }
+    function onThumbVisibility(entries) {
+      for (const entry of entries) {
+        const item = entry.target._thumb;
+        item.visible = entry.isIntersecting;
+        if (item.visible && !item.canvas && !item.queued) { item.queued = true; thumbs.queue.push(item); }
+      }
+      pumpThumbs();
+    }
+    async function pumpThumbs() {
+      if (thumbs.busy) return;
+      thumbs.busy = true;
+      const gen = thumbs.gen;
+      while (thumbs.queue.length && gen === thumbs.gen) {
+        const item = thumbs.queue.shift();
+        item.queued = false;
+        if (item.visible && !item.canvas && pdf.doc) await renderThumb(item, gen);
+      }
+      if (gen === thumbs.gen) thumbs.busy = false;
+    }
+    async function renderThumb(item, gen) {
+      try {
+        const page = await pdf.doc.getPage(item.index + 1);
+        if (gen !== thumbs.gen) return;
+        const base = page.getViewport({ scale: 1 });
+        item.box.style.aspectRatio = base.width + " / " + base.height;
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const viewport = page.getViewport({ scale: (item.box.clientWidth || 148) * ratio / base.width });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.floor(viewport.width));
+        canvas.height = Math.max(1, Math.floor(viewport.height));
+        await page.render({ canvasContext: canvas.getContext("2d", { alpha: false }), viewport, background: "#ffffff" }).promise;
+        if (gen !== thumbs.gen) return;
+        item.box.replaceChildren(canvas);
+        item.canvas = canvas;
+        thumbs.live.push(item);
+        while (thumbs.live.length > MAX_LIVE_THUMBS) {
+          const stale = thumbs.live.findIndex((entry) => !entry.visible);
+          if (stale < 0) break;
+          const [old] = thumbs.live.splice(stale, 1);
+          old.canvas = null;
+          old.box.replaceChildren();
+        }
+      } catch { /* 缩略图失败时保留空白占位 */ }
+    }
+
+    function updateTools() {
+      const doc = state.doc;
+      const mode = doc?.mode;
+      $("tools").hidden = !doc || doc.empty;
+      if (!doc || doc.empty) return;
+      const hasThumbs = thumbsAvailable(doc);
+      for (const id of ["toggleThumbs", "thumbSep"]) $(id).hidden = !hasThumbs;
+      const sidebarOpen = hasThumbs && wantsSidebar(doc.kind);
+      $("thumbs").hidden = !sidebarOpen;
+      $("toggleThumbs").classList.toggle("active", sidebarOpen);
+      $("toggleThumbs").setAttribute("aria-pressed", String(sidebarOpen));
+      const toggleText = sidebarOpen ? "收起侧栏" : "展开侧栏";
+      $("toggleThumbs").title = toggleText;
+      $("toggleThumbs").setAttribute("aria-label", toggleText);
+      if (sidebarOpen) markThumb();
+      const paged = mode === "pdf" || mode === "slides" || mode === "parsed-slides" || mode === "sheet";
+      const zoomable = mode !== "sheet";
+      for (const id of ["prev", "counter", "next"]) $(id).hidden = !paged;
+      for (const id of ["zoomSep", "zoomOut", "zoomLabel", "zoomIn", "zoomFit"]) $(id).hidden = !zoomable;
+      $("zoomSep").hidden = !paged || !zoomable;
+      $("zoomLabel").textContent = zoomText();
+      const fitText = mode === "pdf" ? "适合宽度" : "适合页面";
+      $("zoomFit").title = fitText + "（0）";
+      $("zoomFit").setAttribute("aria-label", fitText);
+      $("zoomFit").setAttribute("aria-pressed", String(state.zoom === 0));
+      $("fitPageIcon").toggleAttribute("hidden", mode === "pdf");
+      $("fitWidthIcon").toggleAttribute("hidden", mode !== "pdf");
+      $("zoomFit").classList.toggle("active", state.zoom === 0);
+      $("zoomOut").disabled = currentPercent() <= ZOOM_STEPS[0];
+      $("zoomIn").disabled = currentPercent() >= ZOOM_STEPS[ZOOM_STEPS.length - 1];
+      if (mode === "sheet") {
+        setNav("上一个工作表", "下一个工作表");
+        $("counter").textContent = state.sheet.count ? "工作表 " + (state.sheet.active + 1) + " / " + state.sheet.count : "- / -";
+        $("prev").disabled = state.sheet.active <= 0;
+        $("next").disabled = state.sheet.active + 1 >= state.sheet.count;
+      } else if (paged) {
+        const total = doc.pageCount;
+        setNav("上一页", "下一页");
+        $("counter").textContent = state.page + " / " + (total ?? "?");
+        $("prev").disabled = state.page <= 1;
+        $("next").disabled = Boolean(total && state.page >= total);
+      }
+    }
+
+    // ---- PDF / Word：使用 pdf.js 连续滚动渲染 ----
+    const PDF_CSS = 96 / 72;
+    const PAGE_PAD = 16; // 与 #pdfPages 的 padding / gap 保持一致
+    const PAGE_GAP = 12;
+    const MAX_CANVAS_PIXELS = 16 * 1024 * 1024;
+    const pdf = { lib: null, task: null, doc: null, token: 0, views: [], sizes: [], tops: [], heights: [], scale: PDF_CSS, percent: 100, width: 0, programmatic: false, frame: 0, lastWheel: 0 };
+
+    async function pdfLib() {
+      if (!pdf.lib) {
+        pdf.lib = await import("/vendor/pdfjs/pdf.min.mjs");
+        pdf.lib.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs/pdf.worker.min.mjs";
+      }
+      return pdf.lib;
+    }
+    function releasePdf() {
+      pdf.token++;
+      cancelAnimationFrame(pdf.frame);
+      pdf.frame = 0;
+      for (const view of pdf.views) view.task?.cancel();
+      pdf.views = [];
+      pdf.sizes = [];
+      pdf.tops = [];
+      pdf.heights = [];
+      $("pdfPages").replaceChildren();
+      if (ui.thumbsKind === "pdf") clearThumbs();
+      const task = pdf.task;
+      pdf.task = pdf.doc = null;
+      task?.destroy().catch(() => {});
+    }
+    function pageAt(y) {
+      let low = 0;
+      let high = pdf.tops.length - 1;
+      while (low < high) {
+        const mid = (low + high + 1) >> 1;
+        if (pdf.tops[mid] <= y) low = mid; else high = mid - 1;
+      }
+      return low;
+    }
+    function pdfAnchor() {
+      if (!pdf.tops.length) return null;
+      const top = $("pdfView").scrollTop;
+      const page = pageAt(top);
+      return { page, frac: (top - pdf.tops[page]) / pdf.heights[page] };
+    }
+    function schedulePdf() {
+      if (!pdf.frame) pdf.frame = requestAnimationFrame(onPdfFrame);
+    }
+    function onPdfFrame() {
+      pdf.frame = 0;
+      if (!pdf.doc || !pdf.tops.length) return;
+      const view = $("pdfView");
+      updatePdfPages(view);
+      if (pdf.programmatic) return;
+      let page;
+      if (view.scrollTop <= 0) page = 1;
+      else if (view.scrollTop + view.clientHeight >= view.scrollHeight - 2) page = pdf.tops.length;
+      else page = pageAt(view.scrollTop + view.clientHeight * 0.35) + 1;
+      if (page !== state.page) { state.page = page; updateTools(); }
+    }
+    function layoutPdf(anchor) {
+      const view = $("pdfView");
+      const count = pdf.views.length;
+      if (!count || !view.clientWidth) return;
+      const widest = pdf.sizes.reduce((max, size) => Math.max(max, size.w), 1);
+      const fit = (view.clientWidth - PAGE_PAD * 2) / (widest * PDF_CSS) * 100;
+      const previousScale = pdf.scale.toFixed(4);
+      pdf.percent = state.zoom || Math.min(400, Math.max(10, fit));
+      pdf.scale = pdf.percent / 100 * PDF_CSS;
+      const scaleChanged = previousScale !== pdf.scale.toFixed(4);
+      pdf.width = view.clientWidth;
+      let y = PAGE_PAD;
+      for (let i = 0; i < count; i++) {
+        const width = pdf.sizes[i].w * pdf.scale;
+        const height = pdf.sizes[i].h * pdf.scale;
+        const item = pdf.views[i];
+        item.div.style.width = width + "px";
+        item.div.style.height = height + "px";
+        if (item.canvas) {
+          item.canvas.style.width = width + "px";
+          item.canvas.style.height = height + "px";
+        }
+        if (scaleChanged) {
+          item.gen++;
+          item.task?.cancel();
+          item.task = null;
+          item.key = item.renderKey = "";
+          item.text?.remove();
+          item.text = null;
+        }
+        pdf.tops[i] = y;
+        pdf.heights[i] = height;
+        y += height + PAGE_GAP;
+      }
+      if (anchor) view.scrollTop = pdf.tops[anchor.page] + anchor.frac * pdf.heights[anchor.page];
+      updateTools();
+      schedulePdf();
+    }
+    function updatePdfPages(view) {
+      const token = pdf.token;
+      const first = pageAt(view.scrollTop - 800);
+      const last = pageAt(view.scrollTop + view.clientHeight + 800);
+      pdf.views.forEach((item, index) => {
+        if (index >= first && index <= last) renderPdfPage(index, token);
+        else if ((index < first - 2 || index > last + 2) && (item.canvas || item.task)) releasePdfPage(item);
+      });
+    }
+    function releasePdfPage(item) {
+      item.gen++;
+      item.task?.cancel();
+      item.task = null;
+      item.canvas = item.text = null;
+      item.key = item.renderKey = "";
+      item.div.replaceChildren();
+    }
+    async function renderPdfPage(index, token) {
+      const item = pdf.views[index];
+      const key = pdf.scale.toFixed(4) + "@" + (window.devicePixelRatio || 1);
+      if (item.key === key || item.renderKey === key) return;
+      item.task?.cancel();
+      const gen = ++item.gen;
+      item.renderKey = key;
+      const stale = () => token !== pdf.token || item.gen !== gen;
+      try {
+        const page = await pdf.doc.getPage(index + 1);
+        if (stale()) return;
+        const viewport = page.getViewport({ scale: pdf.scale });
+        const ratio = Math.min(window.devicePixelRatio || 1, Math.sqrt(MAX_CANVAS_PIXELS / (viewport.width * viewport.height)));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.floor(viewport.width * ratio));
+        canvas.height = Math.max(1, Math.floor(viewport.height * ratio));
+        canvas.style.width = viewport.width + "px";
+        canvas.style.height = viewport.height + "px";
+        const task = page.render({
+          canvasContext: canvas.getContext("2d", { alpha: false }),
+          viewport,
+          transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
+          background: "#ffffff",
+        });
+        item.task = task;
+        await task.promise;
+        if (stale()) return;
+        const text = document.createElement("div");
+        text.className = "textLayer";
+        text.style.setProperty("--scale-factor", String(viewport.scale));
+        try {
+          await new pdf.lib.TextLayer({ textContentSource: page.streamTextContent(), container: text, viewport }).render();
+        } catch { /* 文字层失败不影响阅读 */ }
+        if (stale()) return;
+        item.div.replaceChildren(canvas, text);
+        item.canvas = canvas;
+        item.text = text;
+        item.key = key;
+      } catch (error) {
+        if (error?.name === "RenderingCancelledException" || stale()) return;
+        item.renderKey = "";
+      } finally {
+        if (item.gen === gen) item.task = null;
+      }
+    }
+    async function loadPdfSizes(doc, token) {
+      let changed = false;
+      try {
+        for (let start = 2; start <= doc.numPages; start += 40) {
+          const count = Math.min(40, doc.numPages - start + 1);
+          const sizes = await Promise.all(Array.from({ length: count }, async (_, offset) => {
+            const view = (await doc.getPage(start + offset)).getViewport({ scale: 1 });
+            return { w: view.width, h: view.height };
+          }));
+          if (token !== pdf.token) return;
+          sizes.forEach((size, offset) => {
+            const index = start - 1 + offset;
+            const current = pdf.sizes[index];
+            if (Math.abs(current.w - size.w) > 0.5 || Math.abs(current.h - size.h) > 0.5) {
+              pdf.sizes[index] = size;
+              if (thumbs.items[index]) thumbs.items[index].box.style.aspectRatio = size.w + " / " + size.h;
+              releasePdfPage(pdf.views[index]);
+              changed = true;
+            }
+          });
+        }
+      } catch { /* 个别页面尺寸读取失败时沿用首页尺寸 */ }
+      if (changed && token === pdf.token) layoutPdf(pdfAnchor());
+    }
+    function gotoPdfPage(page) {
+      if (!pdf.tops.length) return;
+      page = Math.max(1, Math.min(page, pdf.tops.length));
+      state.page = page;
+      pdf.programmatic = true;
+      $("pdfView").scrollTop = Math.max(0, pdf.tops[page - 1] - (page === 1 ? PAGE_PAD : 8));
+      updateTools();
+      schedulePdf();
+    }
+    async function drawPdf() {
+      releasePdf();
+      const token = pdf.token;
+      const doc = state.doc;
+      try {
+        const lib = await pdfLib();
+        if (token !== pdf.token) return;
+        const task = lib.getDocument({
+          url: "/document.pdf?v=" + doc.revision,
+          cMapUrl: "/vendor/pdfjs/cmaps/",
+          cMapPacked: true,
+          standardFontDataUrl: "/vendor/pdfjs/standard_fonts/",
+          isEvalSupported: false,
+        });
+        pdf.task = task;
+        const loaded = await task.promise;
+        if (token !== pdf.token) return;
+        pdf.doc = loaded;
+        const first = (await loaded.getPage(1)).getViewport({ scale: 1 });
+        if (token !== pdf.token) return;
+        pdf.sizes = Array.from({ length: loaded.numPages }, () => ({ w: first.width, h: first.height }));
+        pdf.views = pdf.sizes.map((_, index) => {
+          const div = document.createElement("div");
+          div.className = "pdf-page";
+          div.dataset.page = String(index + 1);
+          return { div, canvas: null, text: null, key: "", renderKey: "", gen: 0, task: null };
+        });
+        $("pdfPages").replaceChildren(...pdf.views.map((item) => item.div));
+        if (doc.pageCount !== loaded.numPages) {
+          doc.pageCount = loaded.numPages;
+          setStatus(describe(doc), Boolean(doc.warning));
+        }
+        state.page = Math.max(1, Math.min(state.page, loaded.numPages));
+        buildPdfThumbs();
+        layoutPdf(null);
+        gotoPdfPage(state.page);
+        if (document.activeElement === document.body) $("pdfView").focus({ preventScroll: true });
+        loadPdfSizes(loaded, token);
+      } catch (error) {
+        if (token !== pdf.token) return;
+        showError(error?.name === "PasswordException" ? "此 PDF 已加密，暂不支持查看。" : "页面渲染失败：" + (error?.message || error));
+        setStatus("读取失败");
+      }
+    }
+    function drawText() {
+      const content = $("content");
+      content.replaceChildren();
+      content.style.fontSize = state.zoom ? state.zoom + "%" : "";
+      const paragraphs = state.doc.paragraphs ?? [];
+      if (!paragraphs.length) {
+        const empty = document.createElement("p");
+        empty.className = "error";
+        empty.style.color = "var(--text-color-muted, #656d76)";
+        empty.textContent = "此文档没有可显示的正文文字。";
+        content.appendChild(empty);
+        return;
+      }
+      for (const paragraph of paragraphs) {
+        const heading = /^heading\d*$/i.test(paragraph.style);
+        const element = document.createElement(heading ? "h2" : "p");
+        element.textContent = paragraph.text;
+        content.appendChild(element);
+        for (const url of paragraph.images) {
+          const image = document.createElement("img");
+          image.src = url;
+          image.alt = "文档中的图片";
+          content.appendChild(image);
+        }
+      }
+    }
+
+    function fitSlide() {
+      const slide = state.doc?.slides?.[state.page - 1];
+      const element = $("slide");
+      const stage = $("stage");
+      stage.classList.toggle("zoomed", state.zoom > 100);
+      if (state.doc?.mode !== "slides") {
+        element.style.width = element.style.height = "";
+        element.style.zoom = state.zoom ? state.zoom / 100 : "";
+        return;
+      }
+      element.style.zoom = "";
+      const image = element.querySelector("img");
+      if (!slide || !image?.naturalWidth) return;
+      const style = getComputedStyle(stage);
+      const width = Math.max(1, stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+      const height = Math.max(1, stage.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
+      const ratio = image.naturalWidth / image.naturalHeight;
+      const fitted = Math.min(width, height * ratio) * (state.zoom ? state.zoom / 100 : 1);
+      element.style.width = Math.max(1, fitted) + "px";
+      element.style.height = Math.max(1, fitted / ratio) + "px";
+    }
+    function drawSlide() {
+      const slide = state.doc.slides[state.page - 1];
+      const element = $("slide");
+      const rendered = state.doc.mode === "slides";
+      element.className = rendered ? "rendered" : "";
+      element.replaceChildren();
+      if (!slide) return;
+      if (rendered) {
+        const image = document.createElement("img");
+        image.src = slide.images[0];
+        image.alt = "第 " + slide.number + " 张幻灯片";
+        image.onload = fitSlide;
+        element.appendChild(image);
+      } else {
+        const title = document.createElement("h2");
+        title.textContent = slide.text[0] || "幻灯片 " + slide.number;
+        element.appendChild(title);
+        for (const line of slide.text.slice(1)) {
+          const p = document.createElement("p");
+          p.textContent = line;
+          element.appendChild(p);
+        }
+        for (const url of slide.images) {
+          const image = document.createElement("img");
+          image.src = url;
+          image.alt = "";
+          element.appendChild(image);
+        }
+      }
+      fitSlide();
+    }
+    function drawThumbs() {
+      clearThumbs();
+      ui.thumbsKind = "slides";
+      const container = $("thumbs");
+      state.doc.slides.forEach((slide, index) => {
+        const button = document.createElement("button");
+        button.className = "thumb";
+        button.type = "button";
+        if (slide.images[0]) {
+          const image = document.createElement("img");
+          image.src = slide.images[0];
+          image.alt = "";
+          image.loading = "lazy";
+          button.appendChild(image);
+        }
+        const label = document.createElement("span");
+        label.textContent = (index + 1) + ". " + (slide.text[0] || "无标题");
+        button.appendChild(label);
+        button.onclick = () => gotoPage(index + 1);
+        container.appendChild(button);
+      });
+    }
+
+    function render() {
+      const doc = state.doc;
+      updateTools();
+      if (doc.mode === "pdf") { show("pdfView"); drawPdf(); }
+      else if (doc.mode === "text") { show("content"); drawText(); }
+      else if (doc.mode === "slides" || doc.mode === "parsed-slides") { show("stage"); drawSlide(); }
+    }
+    function gotoPage(page) {
+      const total = state.doc?.pageCount;
+      if (state.doc?.mode === "sheet") {
+        const index = Math.max(0, Math.min(page - 1, Math.max(0, state.sheet.count - 1)));
+        $("excelFrame").contentWindow?.postMessage({ type: "activate-sheet", index }, "*");
+        state.sheet.active = index;
+        updateTools();
+        return;
+      }
+      if (state.doc.mode === "pdf") { gotoPdfPage(page); return; }
+      state.page = Math.max(1, total ? Math.min(page, total) : page);
+      updateTools();
+      drawSlide();
+      $("stage").scrollTop = 0;
+    }
+    function setZoom(zoom) {
+      state.zoom = zoom;
+      if (state.doc.mode === "pdf") { layoutPdf(pdfAnchor()); return; }
+      updateTools();
+      if (state.doc.mode === "text") { drawText(); return; }
+      // 缩放时保持视图中心不变，只调整幻灯片尺寸而不重新加载图片
+      const stage = $("stage");
+      const cx = stage.scrollWidth ? (stage.scrollLeft + stage.clientWidth / 2) / stage.scrollWidth : .5;
+      const cy = stage.scrollHeight ? (stage.scrollTop + stage.clientHeight / 2) / stage.scrollHeight : .5;
+      fitSlide();
+      stage.scrollLeft = cx * stage.scrollWidth - stage.clientWidth / 2;
+      stage.scrollTop = cy * stage.scrollHeight - stage.clientHeight / 2;
+    }
+    function stepZoom(direction) {
+      const current = currentPercent();
+      const next = direction > 0
+        ? ZOOM_STEPS.find((step) => step > current + 0.5)
+        : [...ZOOM_STEPS].reverse().find((step) => step < current - 0.5);
+      if (next) setZoom(next);
+    }
+
+    function describe(data) {
+      const size = data.fileSize ? " · " + (data.fileSize / 1048576 >= 1 ? (data.fileSize / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(data.fileSize / 1024)) + " KB") : "";
+      const unit = data.pageCount ? " · " + data.pageCount + " " + data.unit : "";
+      const modeText = { text: " · 文字预览", "parsed-slides": " · 文本解析模式" }[data.mode] || "";
+      return data.fileName + unit + size + modeText + (data.warning ? " · " + data.warning : "");
+    }
+    function loadDocument(data, reset) {
+      if (!reset && data.revision === state.revision) return;
+      state.revision = data.revision;
+      const previous = state.doc;
+      reset = reset || !previous || previous.filePath !== data.filePath;
+      state.doc = data;
+      $("filePath").value = data.filePath || "";
+      $("filePicker").accept = data.accept || "";
+      if (data.empty) {
+        state.doc = null;
+        state.page = 1;
+        state.zoom = 0;
+        show("welcome");
+        $("thumbs").hidden = true;
+        $("kindBadge").hidden = true;
+        $("tools").hidden = true;
+        clearThumbs();
+        setStatus(IDLE_STATUS);
+        return;
+      }
+      if (reset) { state.page = 1; state.zoom = 0; state.sheet = { active: 0, count: 0 }; }
+      state.page = Math.max(1, Math.min(state.page, data.pageCount || state.page));
+      $("kindBadge").textContent = data.label;
+      $("kindBadge").hidden = false;
+      clearThumbs();
+      setStatus(describe(data), Boolean(data.warning));
+      if (data.mode === "sheet") {
+        show("excelFrame");
+        $("excelFrame").src = "/excel.html?v=" + data.revision;
+        updateTools();
+        return;
+      }
+      if (data.mode === "slides" || data.mode === "parsed-slides") drawThumbs();
+      render();
+    }
+
+    async function request(url, options, busy) {
+      setStatus(busy);
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "操作失败");
+      return data;
+    }
+    // 打开 / 刷新 / 返回首页期间暂停 SSE 同步，避免同一份文档被重复加载
+    async function exclusive(task) {
+      state.busy++;
+      try {
+        await task();
+      } finally {
+        state.busy--;
+        if (!state.busy && state.dirty) { state.dirty = false; sync(); }
+      }
+    }
+    function load(force = false) {
+      return exclusive(async () => {
+        try {
+          loadDocument(await request("/api/document" + (force ? "?refresh=1" : ""), undefined, force ? "正在刷新…" : "正在读取文件…"), false);
+        } catch (error) {
+          showError(error.message);
+          setStatus("读取失败");
+        }
+      });
+    }
+    async function sync() {
+      if (state.busy) { state.dirty = true; return; }
+      try {
+        const response = await fetch("/api/document");
+        const data = await response.json();
+        if (response.ok) loadDocument(data, false);
+      } catch { /* 下次变更时重试 */ }
+    }
+    function openFile() {
+      const filePath = $("filePath").value.trim();
+      if (!filePath) { setStatus("请输入文件路径后按回车打开"); return Promise.resolve(); }
+      return exclusive(async () => {
+        try {
+          loadDocument(await request("/api/open", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filePath }),
+          }, "正在打开…"), true);
+          loadHistory();
+        } catch (error) {
+          showError(error.message);
+          setStatus("打开失败");
+        }
+      });
+    }
+    function uploadFile(file) {
+      return exclusive(async () => {
+        try {
+          loadDocument(await request("/api/upload", {
+            method: "POST",
+            headers: { "X-File-Name": encodeURIComponent(file.name) },
+            body: file,
+          }, "正在读取所选文件…"), true);
+        } catch (error) {
+          showError(error.message);
+          setStatus("文件读取失败");
+        }
+      });
+    }
+    function goHome() {
+      closeHistory();
+      return exclusive(async () => {
+        try {
+          loadDocument(await request("/api/close", { method: "POST" }, "正在返回首页…"), true);
+          loadHistory();
+        } catch (error) {
+          setStatus(error.message);
+        }
+      });
+    }
+
+    function historyButton(item) {
+      const button = document.createElement("button");
+      button.className = "history-item";
+      button.type = "button";
+      button.title = item;
+      button.textContent = item;
+      button.onclick = () => { $("filePath").value = item; closeHistory(); openFile(); };
+      return button;
+    }
+    async function loadHistory() {
+      try {
+        const response = await fetch("/api/history");
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "历史记录读取失败");
+        const menu = $("historyMenu");
+        menu.replaceChildren();
+        if (!data.items.length) {
+          const empty = document.createElement("div");
+          empty.className = "history-empty";
+          empty.textContent = "暂无历史记录";
+          menu.appendChild(empty);
+        } else {
+          data.items.forEach((item) => menu.appendChild(historyButton(item)));
+        }
+        const recent = $("recent");
+        recent.replaceChildren(...data.items.slice(0, 5).map(historyButton));
+        recent.hidden = !data.items.length;
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+    function closeHistory() { $("historyMenu").hidden = true; $("historyToggle").setAttribute("aria-expanded", "false"); }
+    function toggleHistory() {
+      const menu = $("historyMenu");
+      menu.hidden = !menu.hidden;
+      $("historyToggle").setAttribute("aria-expanded", String(!menu.hidden));
+      if (menu.hidden) return;
+      // 窄窗口下避免菜单左侧溢出视口
+      menu.style.right = "0";
+      const overflow = 8 - menu.getBoundingClientRect().left;
+      if (overflow > 0) menu.style.right = -overflow + "px";
+    }
+
+    $("prev").onclick = () => gotoPage(state.doc.mode === "sheet" ? state.sheet.active : state.page - 1);
+    $("next").onclick = () => gotoPage(state.doc.mode === "sheet" ? state.sheet.active + 2 : state.page + 1);
+    $("zoomOut").onclick = () => stepZoom(-1);
+    $("zoomIn").onclick = () => stepZoom(1);
+    $("zoomFit").onclick = () => setZoom(0);
+    $("refresh").onclick = () => load(true);
+    $("home").onclick = goHome;
+    $("toggleThumbs").onclick = () => {
+      const kind = state.doc?.kind;
+      if (!kind) return;
+      setSidebar(kind, !wantsSidebar(kind));
+      ui.thumbSel = 0;
+      updateTools();
+      if (state.doc?.mode === "slides") fitSlide();
+    };
+    $("pickFile").onclick = () => $("filePicker").click();
+    $("filePicker").addEventListener("change", (event) => {
+      const [file] = event.target.files;
+      if (file) uploadFile(file);
+      event.target.value = "";
+    });
+    $("historyToggle").onclick = toggleHistory;
+    document.addEventListener("click", (event) => { if (!event.target.closest(".history-control")) closeHistory(); });
+    $("filePath").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing) { closeHistory(); openFile(); }
+    });
+    window.addEventListener("resize", () => { if (state.doc?.mode === "slides") fitSlide(); });
+    new ResizeObserver(() => {
+      if (!pdf.doc) return;
+      const width = $("pdfView").clientWidth;
+      if (!pdf.tops.length || (state.zoom === 0 && width && width !== pdf.width)) layoutPdf(pdfAnchor());
+      else schedulePdf();
+    }).observe($("pdfView"));
+    for (const type of ["wheel", "touchstart", "pointerdown", "keydown"]) {
+      $("pdfView").addEventListener(type, () => { pdf.programmatic = false; }, { passive: true });
+    }
+    $("pdfView").addEventListener("scroll", schedulePdf, { passive: true });
+    $("pdfView").addEventListener("wheel", (event) => {
+      if (!event.ctrlKey || !pdf.doc) return;
+      event.preventDefault();
+      if (event.timeStamp - pdf.lastWheel < 80) return;
+      pdf.lastWheel = event.timeStamp;
+      stepZoom(event.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
+    $("stage").addEventListener("wheel", (event) => {
+      if (!event.ctrlKey || !state.doc) return;
+      event.preventDefault();
+      if (event.timeStamp - pdf.lastWheel < 80) return;
+      pdf.lastWheel = event.timeStamp;
+      stepZoom(event.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
+    window.addEventListener("keydown", (event) => {
+      if (!state.doc || event.target.matches("input, textarea, select") || event.ctrlKey || event.metaKey || event.altKey) return;
+      const keys = { ArrowLeft: "prev", PageUp: "prev", ArrowRight: "next", PageDown: "next", "-": "zoomOut", "+": "zoomIn", "=": "zoomIn", "0": "zoomFit" };
+      const target = keys[event.key];
+      if (target && !$(target).hidden && !$(target).disabled) { event.preventDefault(); $(target).click(); }
+    });
+    window.addEventListener("message", (event) => {
+      if (event.source !== $("excelFrame").contentWindow) return;
+      if (event.data?.type === "excel-ready" || event.data?.type === "excel-sheet") {
+        state.sheet = { active: Math.max(0, event.data.active), count: event.data.count };
+        updateTools();
+      }
+    });
+
+    let dragDepth = 0;
+    window.addEventListener("dragenter", (event) => { if (event.dataTransfer?.types.includes("Files")) { dragDepth++; $("drop").hidden = false; } });
+    window.addEventListener("dragleave", () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("drop").hidden = true; });
+    window.addEventListener("dragover", (event) => event.preventDefault());
+    window.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dragDepth = 0;
+      $("drop").hidden = true;
+      const [file] = event.dataTransfer?.files ?? [];
+      if (file) uploadFile(file);
+    });
+
+    new EventSource("/events").onmessage = () => sync();
+    loadHistory();
+    load();
+  </script>
+</body>
+</html>
